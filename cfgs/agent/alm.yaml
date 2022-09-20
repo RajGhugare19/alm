@@ -1,0 +1,58 @@
+#common
+agent: 'alm'
+device: 'cuda'
+seed: 1
+
+#benchmark
+benchmark: 'gym'
+id: 'HalfCheetah-v2'
+
+#data 
+num_train_steps: 500000
+explore_steps: 5000
+max_episode_steps: 1000
+env_buffer_size: 100000
+batch_size: 512
+seq_len: 3
+
+#learning
+gamma: 0.99
+tau: 0.005
+target_update_interval: 1
+lambda_cost: 0.1
+lr: {'model' : 0.0001, 'reward' : 0.0001, 'critic' : 0.0001, 'actor' : 0.0001}
+max_grad_norm: 100.0
+
+#exploration
+expl_start: 1.0
+expl_end: 0.1
+expl_duration: 100000
+stddev_clip: 0.3
+
+#hidden_dims and layers
+latent_dims: 50
+hidden_dims: 512
+model_hidden_dims: 1024
+
+#bias evaluation
+eval_bias: False 
+eval_bias_interval: 500
+
+#evaluation
+eval_episode_interval: 5000
+num_eval_episodes: 5
+
+#logging
+wandb_log: False
+wandb_run_name: 'ALM'
+log_interval: 500
+
+#saving
+save_snapshot: False
+save_snapshot_interval: 50000
+
+hydra:
+  run:
+    dir: ./local_exp/alm/${id}_${seed}
+  job:
+    chdir: True

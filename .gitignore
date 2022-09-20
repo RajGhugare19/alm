@@ -1,0 +1,35 @@
+__pycache__/
+
+# wandb
+wandb/
+
+#hydra 
+outputs/
+local_exp/
+
+#saved binaries
+checkpoints/
+
+#mujoco log files
+MUJOCO_LOG.TXT
+
+#previous scripts
+scripts/
+
+#figures for the paper
+figures/
+
+#testing 
+test.py
+
+#saved binaries
+saved/
+
+#virtual env
+env_alm/
+
+#plots
+plots/
+
+#scores
+scores/
