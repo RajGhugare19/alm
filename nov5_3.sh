@@ -2,7 +2,7 @@ python train.py id=HalfCheetah-v2 lambda_cost=1 num_train_steps=300000 seed=1 wa
 
 python train.py id=HalfCheetah-v2 lambda_cost=1 num_train_steps=300000 seed=2 wandb_log=True wandb_run_name=alm_lambda1_2& 
 
-python train.py id=HalfCheetah-v2 lambda_cost=1 num_train_steps=300000 seed=3 wandb_log=True wandb_run_name=alm_lambda1_3
+python train.py id=HalfCheetah-v2 lambda_cost=1 num_train_steps=300000 seed=3 wandb_log=True wandb_run_name=alm_lambda1_3&
 
 python train.py id=Ant-v2 lambda_cost=1 seed=1 wandb_log=True wandb_run_name=alm_lambda1_1& 
 
