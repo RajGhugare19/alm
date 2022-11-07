@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 import wandb
 import utils
-from models import Encoder, ModelPrior, RewardPrior, Discriminator, Critic, Actor
+from models import Encoder, IdentityEncoder, ModelPrior, RewardPrior, Discriminator, Critic, Actor
 
 class AlmAgent(object):
     def __init__(self, device, action_low, action_high, num_states, num_actions,
@@ -13,7 +13,7 @@ class AlmAgent(object):
                 lr, max_grad_norm, batch_size, seq_len, lambda_cost, 
                 expl_start, expl_end, expl_duration, stddev_clip,
                 latent_dims, hidden_dims, model_hidden_dims, 
-                log_wandb, log_interval
+                log_wandb, log_interval, identity_encoder
                 ):
 
         self.device = device 
@@ -40,7 +40,7 @@ class AlmAgent(object):
         self.log_interval = log_interval
 
         self.env_buffer = utils.ReplayMemory(env_buffer_size, num_states, num_actions, np.float32)
-        self._init_networks(num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims)
+        self._init_networks(num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims, identity_encoder)
         self._init_optims(lr)
 
     def get_action(self, state, step, eval=False):
@@ -355,10 +355,16 @@ class AlmAgent(object):
         action_seq = torch.stack(action_seq, dim=0)
         return z_seq, action_seq
 
-    def _init_networks(self, num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims):
-        self.encoder = Encoder(num_states, hidden_dims, latent_dims).to(self.device)
-        self.encoder_target = Encoder(num_states, hidden_dims, latent_dims).to(self.device)
-        utils.hard_update(self.encoder_target, self.encoder)
+    def _init_networks(self, num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims, identity_encoder):
+        if identity_encoder:
+            self.encoder = IdentityEncoder(num_states).to(self.device)
+            self.encoder_target = IdentityEncoder(num_states).to(self.device)
+            utils.hard_update(self.encoder_target, self.encoder)
+            latent_dims = num_states
+        else:
+            self.encoder = Encoder(num_states, hidden_dims, latent_dims).to(self.device)
+            self.encoder_target = Encoder(num_states, hidden_dims, latent_dims).to(self.device)
+            utils.hard_update(self.encoder_target, self.encoder)
 
         self.model = ModelPrior(latent_dims, num_actions, model_hidden_dims).to(self.device)
         self.reward = RewardPrior(latent_dims, hidden_dims, num_actions).to(self.device)

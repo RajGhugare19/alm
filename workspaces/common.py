@@ -12,7 +12,7 @@ def make_agent(env, device, cfg):
         action_low = env.action_space.low[0]
         action_high = env.action_space.high[0]
 
-        if cfg.id == 'Humanoid-v2':
+        if cfg.id == 'Humanoid-v2' or cfg.id == 'HumanoidTruncatedObs-v2':
             cfg.env_buffer_size = 1000000
         buffer_size = min(cfg.env_buffer_size, cfg.num_train_steps)
 
@@ -21,7 +21,7 @@ def make_agent(env, device, cfg):
                             cfg.lr, cfg.max_grad_norm, cfg.batch_size, cfg.seq_len, cfg.lambda_cost,
                             cfg.expl_start, cfg.expl_end, cfg.expl_duration, cfg.stddev_clip, 
                             cfg.latent_dims, cfg.hidden_dims, cfg.model_hidden_dims,
-                            cfg.wandb_log, cfg.log_interval
+                            cfg.wandb_log, cfg.log_interval, cfg.identity_encoder
                             )
                             
     else:

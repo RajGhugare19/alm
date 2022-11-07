@@ -5,6 +5,23 @@ import torch.distributions as td
 import numpy as np
 import utils
 
+class IdentityEncoder(nn.Module):
+    def __init__(self, input_shape):
+        super().__init__()
+        self.encoder = nn.Identity()
+        self.noise = nn.Linear(input_shape, input_shape)
+
+        self.std_min = 0.1
+        self.std_max = 10.0
+        self.apply(utils.weight_init)
+
+    def forward(self, x):
+        mean = self.encoder(x)
+        std = self.noise(x)
+        std = self.std_max - F.softplus(self.std_max-std)
+        std = self.std_min  + F.softplus(std-self.std_min) 
+        return td.independent.Independent(td.Normal(mean, std), 1)
+
 class Encoder(nn.Module):
     def __init__(self, input_shape, hidden_dims, latent_dims):
         super().__init__()

@@ -7,6 +7,9 @@ seed: 1
 benchmark: 'gym'
 id: 'HalfCheetah-v2'
 
+#rebuttal: 
+identity_encoder: False
+
 #data 
 num_train_steps: 500000
 explore_steps: 5000
