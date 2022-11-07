@@ -5,7 +5,7 @@ import wandb
 import numpy as np
 
 from pathlib import Path 
-from utils.env import save_frames_as_gif
+from utils.env import save_frames_as_gif, GymPostiveRewardWrapper
 from workspaces.common import make_agent, make_env
 
 class MujocoWorkspace:
@@ -18,6 +18,9 @@ class MujocoWorkspace:
         self.device = torch.device(cfg.device)
         self.set_seed()
         self.train_env, self.eval_env = make_env(self.cfg)
+        if self.cfg.positive_reward:
+            self.train_env = GymPostiveRewardWrapper(self.train_env)
+            
         self.agent = make_agent(self.train_env, self.device, self.cfg)
         self._train_step = 0
         self._train_episode = 0
@@ -36,12 +39,11 @@ class MujocoWorkspace:
             action = self.train_env.action_space.sample()
             next_state, reward, done, info = self.train_env.step(action)
             self.agent.env_buffer.push((state, action, reward, next_state, False if info.get("TimeLimit.truncated", False) else done))
-
             if done:
                 state, done = self.train_env.reset(), False
             else:
                 state = next_state
-            
+        
     def train(self):
         self._explore()
         self._eval()

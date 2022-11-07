@@ -13,7 +13,7 @@ class AlmAgent(object):
                 lr, max_grad_norm, batch_size, seq_len, lambda_cost, 
                 expl_start, expl_end, expl_duration, stddev_clip,
                 latent_dims, hidden_dims, model_hidden_dims, 
-                log_wandb, log_interval, identity_encoder
+                log_wandb, log_interval, identity_encoder, positive_reward, total_positive_reward
                 ):
 
         self.device = device 
@@ -38,6 +38,10 @@ class AlmAgent(object):
         #logging        
         self.log_wandb = log_wandb
         self.log_interval = log_interval
+
+        #rebuttal
+        self.positive_reward = positive_reward
+        self.total_positive_reward = total_positive_reward
 
         self.env_buffer = utils.ReplayMemory(env_buffer_size, num_states, num_actions, np.float32)
         self._init_networks(num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims, identity_encoder)
@@ -146,14 +150,18 @@ class AlmAgent(object):
                 log = False 
 
             kl_loss, z_next_prior_batch = self._kl_loss(z_batch, action_seq[t], next_state_seq[t], log, metrics)
-            reward_loss = self._alm_reward_loss(z_batch, action_seq[t], log, metrics)
+            if self.positive_reward:
+                reward_loss = torch.log(self._alm_reward_loss(z_batch, action_seq[t], log, metrics))
+            else:
+                reward_loss = self._alm_reward_loss(z_batch, action_seq[t], log, metrics)
             alm_loss += (kl_loss - reward_loss)
 
             z_batch = z_next_prior_batch
-
-        Q = self._alm_value_loss(z_batch, std, log_q, metrics)
+        if self.positive_reward:
+            Q = torch.log(self._alm_value_loss(z_batch, std, log_q, metrics))
+        else:
+            Q = self._alm_value_loss(z_batch, std, log_q, metrics)
         alm_loss += (-Q)
-        
         return alm_loss.mean()
 
     def _kl_loss(self, z_batch, action_batch, next_state_batch, log, metrics):
@@ -309,16 +317,28 @@ class AlmAgent(object):
         z_seq, action_seq = self._rollout_imagination(z_batch, std)
 
         with utils.FreezeParameters([self.model, self.reward, self.classifier, self.critic]):
-            reward = self.reward(z_seq[:-1], action_seq[:-1])
-            kl_reward = self.classifier.get_reward(z_seq[:-1], action_seq[:-1], z_seq[1:].detach())
-            discount = self.gamma * torch.ones_like(reward)
-            q_values_1, q_values_2 = self.critic(z_seq, action_seq.detach())      
-            q_values = torch.min(q_values_1, q_values_2) 
-            
-            returns = lambda_returns(reward+self.lambda_cost*kl_reward, discount, q_values[:-1], q_values[-1], self.seq_len)
-            discount = torch.cat([torch.ones_like(discount[:1]), discount])
-            discount = torch.cumprod(discount[:-1], 0)
-            actor_loss = -torch.mean(discount * returns)
+            if self.total_positive_reward:
+                reward = torch.log(self.reward(z_seq[:-1], action_seq[:-1]))
+                kl_reward = self.classifier.get_reward(z_seq[:-1], action_seq[:-1], z_seq[1:].detach())
+                discount = self.gamma * torch.ones_like(reward)
+                q_values_1, q_values_2 = self.critic(z_seq, action_seq.detach())      
+                q_values = torch.log(torch.min(q_values_1, q_values_2)) 
+                
+                returns = lambda_returns(reward+self.lambda_cost*kl_reward, discount, q_values[:-1], q_values[-1], self.seq_len)
+                discount = torch.cat([torch.ones_like(discount[:1]), discount])
+                discount = torch.cumprod(discount[:-1], 0)
+                actor_loss = -torch.mean(discount * returns)
+            else:
+                reward = self.reward(z_seq[:-1], action_seq[:-1])
+                kl_reward = self.classifier.get_reward(z_seq[:-1], action_seq[:-1], z_seq[1:].detach())
+                discount = self.gamma * torch.ones_like(reward)
+                q_values_1, q_values_2 = self.critic(z_seq, action_seq.detach())      
+                q_values = torch.min(q_values_1, q_values_2) 
+                
+                returns = lambda_returns(reward+self.lambda_cost*kl_reward, discount, q_values[:-1], q_values[-1], self.seq_len)
+                discount = torch.cat([torch.ones_like(discount[:1]), discount])
+                discount = torch.cumprod(discount[:-1], 0)
+                actor_loss = -torch.mean(discount * returns)
             
         if log:
             metrics['min_imag_reward'] = torch.min(reward).item()

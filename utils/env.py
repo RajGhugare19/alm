@@ -170,3 +170,11 @@ class GymActionRepeatWrapper(gym.Wrapper):
 			if done:
 				break
 		return state, reward, done,  info
+
+class GymPostiveRewardWrapper(gym.RewardWrapper):
+    def __init__(self, env, add=10):
+        super().__init__(env)
+        self.add = add
+
+    def reward(self, reward):
+        return reward + self.add

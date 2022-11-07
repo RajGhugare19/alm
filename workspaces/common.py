@@ -21,7 +21,7 @@ def make_agent(env, device, cfg):
                             cfg.lr, cfg.max_grad_norm, cfg.batch_size, cfg.seq_len, cfg.lambda_cost,
                             cfg.expl_start, cfg.expl_end, cfg.expl_duration, cfg.stddev_clip, 
                             cfg.latent_dims, cfg.hidden_dims, cfg.model_hidden_dims,
-                            cfg.wandb_log, cfg.log_interval, cfg.identity_encoder
+                            cfg.wandb_log, cfg.log_interval, cfg.identity_encoder, cfg.positive_reward, cfg.total_positive_reward,
                             )
                             
     else:

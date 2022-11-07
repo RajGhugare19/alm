@@ -9,6 +9,8 @@ id: 'HalfCheetah-v2'
 
 #rebuttal: 
 identity_encoder: False
+positive_reward: False 
+total_positive_reward: False
 
 #data 
 num_train_steps: 500000
