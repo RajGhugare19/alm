@@ -208,16 +208,27 @@ class AlmAgent(object):
         done_batch = torch.FloatTensor(done_batch).to(self.device)  
         discount_batch = self.gamma*(1-done_batch)
 
+        z_dist = self.encoder(state_batch)
         with torch.no_grad():
-            z_dist = self.encoder_target(state_batch)
             z_next_prior_dist = self.model(z_dist.sample(), action_batch)
             z_next_dist = self.encoder_target(next_state_batch)
 
         #update reward and classifier
-        self.update_reward(z_dist.sample(), action_batch, reward_batch, z_next_dist.sample(), z_next_prior_dist.sample(), log, metrics)
+        reward_loss = self.update_reward(z_dist.rsample(), action_batch, reward_batch, z_next_dist.sample(), z_next_prior_dist.sample(), log, metrics)
         
         #update critic
-        self.update_critic(z_dist.sample(), action_batch, reward_batch, z_next_dist.sample(), discount_batch, std, log, metrics)
+        critic_loss = self.update_critic(z_dist.rsample(), action_batch, reward_batch, z_next_dist.sample(), discount_batch, std, log, metrics)
+        
+        self.model_opt.zero_grad()
+        self.reward_opt.zero_grad()
+        self.critic_opt.zero_grad()
+        (reward_loss + critic_loss).backward()
+        model_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.world_model_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
+        reward_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.reward_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.critic_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
+        self.model_opt.step()
+        self.reward_opt.step()
+        self.critic_opt.step()
         
         #update actor
         self.update_actor(z_dist.sample(), std, log, metrics) 
@@ -229,6 +240,7 @@ class AlmAgent(object):
     def update_reward(self, z_batch, action_batch, reward_batch, z_next_batch, z_next_prior_batch, log, metrics):
         reward_loss = self._extrinsic_reward_loss(z_batch, action_batch, reward_batch.unsqueeze(-1), log, metrics)
         classifier_loss = self._intrinsic_reward_loss(z_batch, action_batch, z_next_batch, z_next_prior_batch, log, metrics)
+        return reward_loss + classifier_loss
         self.reward_opt.zero_grad()
         (reward_loss + classifier_loss).backward()
         reward_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.reward_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
@@ -276,8 +288,15 @@ class AlmAgent(object):
             target_Q = reward_batch.unsqueeze(-1) + discount_batch.unsqueeze(-1)*(target_V)
             
         Q1, Q2 = self.critic(z_batch, action_batch)
-        critic_loss = (F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q))/2   
-
+        critic_loss = (F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q))/2  
+        if log:
+            metrics['mean_q_target'] = torch.mean(target_Q).item()
+            metrics['variance_q_target'] = torch.var(target_Q).item()
+            metrics['min_q_target'] = torch.min(target_Q).item()
+            metrics['max_q_target'] = torch.max(target_Q).item()
+            metrics['critic_loss'] = critic_loss.item()
+             
+        return critic_loss
         self.critic_opt.zero_grad()
         critic_loss.backward()
         critic_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.critic_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
