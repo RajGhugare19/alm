@@ -172,9 +172,17 @@ class GymActionRepeatWrapper(gym.Wrapper):
 		return state, reward, done,  info
 
 class GymPostiveRewardWrapper(gym.RewardWrapper):
-    def __init__(self, env, add=10):
+    def __init__(self, env, add=20):
         super().__init__(env)
         self.add = add
 
     def reward(self, reward):
         return reward + self.add
+
+class GymStateNoiseWrapper(gym.ObservationWrapper):
+    def __init__(self, env, noise=0.1):
+        super().__init__(env)
+        self.noise = noise 
+    
+    def observation(self, obs):
+        return obs + np.random.normal(scale=self.noise, size=obs.shape)

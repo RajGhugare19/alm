@@ -11,6 +11,9 @@ id: 'HalfCheetah-v2'
 identity_encoder: False
 positive_reward: False 
 total_positive_reward: False
+linear_classifier: False
+gaussian_noise: False 
+noise_level: 0.0
 
 #data 
 num_train_steps: 500000

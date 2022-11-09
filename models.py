@@ -106,6 +106,24 @@ class Discriminator(nn.Module):
         logits = self.classifier(x)
         reward = torch.sub(logits[..., 1], logits[..., 0])
         return reward.unsqueeze(-1)
+
+class LinearDiscriminator(nn.Module):
+    def __init__(self, latent_dims, hidden_dims, action_dims):
+        super().__init__()
+        self.classifier = nn.Sequential(
+            nn.Linear(2 * latent_dims + action_dims, 2))
+        self.apply(utils.weight_init)
+
+    def forward(self, z, a, z_next):
+        x = torch.cat([z, a, z_next], -1)
+        logits = self.classifier(x)
+        return logits
+    
+    def get_reward(self, z, a, z_next):
+        x = torch.cat([z, a, z_next], -1)
+        logits = self.classifier(x)
+        reward = torch.sub(logits[..., 1], logits[..., 0])
+        return reward.unsqueeze(-1)
         
 class Critic(nn.Module):
     def __init__(self, latent_dims, hidden_dims, action_shape):

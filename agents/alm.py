@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 import wandb
 import utils
-from models import Encoder, IdentityEncoder, ModelPrior, RewardPrior, Discriminator, Critic, Actor
+from models import Encoder, IdentityEncoder, ModelPrior, RewardPrior, LinearDiscriminator, Discriminator, Critic, Actor
 
 class AlmAgent(object):
     def __init__(self, device, action_low, action_high, num_states, num_actions,
@@ -13,7 +13,7 @@ class AlmAgent(object):
                 lr, max_grad_norm, batch_size, seq_len, lambda_cost, 
                 expl_start, expl_end, expl_duration, stddev_clip,
                 latent_dims, hidden_dims, model_hidden_dims, 
-                log_wandb, log_interval, identity_encoder, positive_reward, total_positive_reward
+                log_wandb, log_interval, identity_encoder, positive_reward, total_positive_reward, linear_classifier
                 ):
 
         self.device = device 
@@ -44,7 +44,7 @@ class AlmAgent(object):
         self.total_positive_reward = total_positive_reward
 
         self.env_buffer = utils.ReplayMemory(env_buffer_size, num_states, num_actions, np.float32)
-        self._init_networks(num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims, identity_encoder)
+        self._init_networks(num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims, identity_encoder, linear_classifier)
         self._init_optims(lr)
 
     def get_action(self, state, step, eval=False):
@@ -150,14 +150,14 @@ class AlmAgent(object):
                 log = False 
 
             kl_loss, z_next_prior_batch = self._kl_loss(z_batch, action_seq[t], next_state_seq[t], log, metrics)
-            if self.positive_reward:
+            if self.positive_reward or self.total_positive_reward:
                 reward_loss = torch.log(self._alm_reward_loss(z_batch, action_seq[t], log, metrics))
             else:
                 reward_loss = self._alm_reward_loss(z_batch, action_seq[t], log, metrics)
             alm_loss += (kl_loss - reward_loss)
 
             z_batch = z_next_prior_batch
-        if self.positive_reward:
+        if self.positive_reward or self.total_positive_reward:
             Q = torch.log(self._alm_value_loss(z_batch, std, log_q, metrics))
         else:
             Q = self._alm_value_loss(z_batch, std, log_q, metrics)
@@ -375,7 +375,7 @@ class AlmAgent(object):
         action_seq = torch.stack(action_seq, dim=0)
         return z_seq, action_seq
 
-    def _init_networks(self, num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims, identity_encoder):
+    def _init_networks(self, num_states, num_actions, latent_dims, hidden_dims, model_hidden_dims, identity_encoder, linear_classifier):
         if identity_encoder:
             self.encoder = IdentityEncoder(num_states).to(self.device)
             self.encoder_target = IdentityEncoder(num_states).to(self.device)
@@ -388,7 +388,11 @@ class AlmAgent(object):
 
         self.model = ModelPrior(latent_dims, num_actions, model_hidden_dims).to(self.device)
         self.reward = RewardPrior(latent_dims, hidden_dims, num_actions).to(self.device)
-        self.classifier = Discriminator(latent_dims, hidden_dims, num_actions).to(self.device)
+
+        if linear_classifier:
+            self.classifier = LinearDiscriminator(latent_dims, hidden_dims, num_actions).to(self.device)
+        else:
+            self.classifier = Discriminator(latent_dims, hidden_dims, num_actions).to(self.device)
 
         self.critic = Critic(latent_dims, hidden_dims, num_actions).to(self.device)
         self.critic_target = Critic(latent_dims, hidden_dims, num_actions).to(self.device)

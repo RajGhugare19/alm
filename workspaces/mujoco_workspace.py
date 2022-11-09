@@ -5,7 +5,7 @@ import wandb
 import numpy as np
 
 from pathlib import Path 
-from utils.env import save_frames_as_gif, GymPostiveRewardWrapper
+from utils.env import save_frames_as_gif, GymPostiveRewardWrapper, GymStateNoiseWrapper
 from workspaces.common import make_agent, make_env
 
 class MujocoWorkspace:
@@ -20,7 +20,10 @@ class MujocoWorkspace:
         self.train_env, self.eval_env = make_env(self.cfg)
         if self.cfg.positive_reward:
             self.train_env = GymPostiveRewardWrapper(self.train_env)
-            
+        if self.cfg.gaussian_noise:
+            self.train_env = GymStateNoiseWrapper(self.train_env, self.cfg.noise_level)
+            self.eval_env = GymStateNoiseWrapper(self.eval_env, self.cfg.noise_level)
+
         self.agent = make_agent(self.train_env, self.device, self.cfg)
         self._train_step = 0
         self._train_episode = 0
@@ -43,7 +46,7 @@ class MujocoWorkspace:
                 state, done = self.train_env.reset(), False
             else:
                 state = next_state
-        
+            
     def train(self):
         self._explore()
         self._eval()
