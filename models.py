@@ -42,7 +42,22 @@ class Encoder(nn.Module):
         std = self.std_max - F.softplus(self.std_max-std)
         std = self.std_min  + F.softplus(std-self.std_min) 
         return td.independent.Independent(td.Normal(mean, std), 1)
-        
+
+class Decoder(nn.Module):
+    def __init__(self, output_shape, hidden_dims, latent_dims):
+        super().__init__()
+        self.latent_dims = latent_dims
+        self.encoder = nn.Sequential(
+            nn.Linear(latent_dims, hidden_dims),
+            nn.ELU(), nn.Linear(hidden_dims, hidden_dims),
+            nn.ELU(), nn.Linear(hidden_dims, output_shape))
+
+        self.apply(utils.weight_init)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        return x 
+
 class ModelPrior(nn.Module):
     def __init__(self, latent_dims, action_dims, hidden_dims, num_layers=2):
         super().__init__()

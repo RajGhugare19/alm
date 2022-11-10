@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 import wandb
 import utils
-from models import Encoder, IdentityEncoder, ModelPrior, RewardPrior, LinearDiscriminator, Discriminator, Critic, Actor
+from models import Encoder, IdentityEncoder, ModelPrior, RewardPrior, LinearDiscriminator, Discriminator, Critic, Actor, Decoder
 
 class AlmAgent(object):
     def __init__(self, device, action_low, action_high, num_states, num_actions,
@@ -129,8 +129,8 @@ class AlmAgent(object):
         reward_seq = torch.FloatTensor(reward_seq).to(self.device)
         done_seq = torch.FloatTensor(done_seq).to(self.device)  
         
-        with utils.FreezeParameters([self.encoder]):
-            alm_loss = self.alm_loss(state_seq, action_seq, next_state_seq, std, step, False, metrics)    
+        #with utils.FreezeParameters([self.encoder]):
+        alm_loss = self.alm_loss(state_seq, action_seq, next_state_seq, std, step, False, metrics)    
             
         self.model_opt.zero_grad()
         alm_loss.backward()
@@ -143,7 +143,8 @@ class AlmAgent(object):
 
     def alm_loss(self, state_seq, action_seq, next_state_seq, std, step, log, metrics):
         z_dist = self.encoder(state_seq[0])
-        z_batch = z_dist.rsample()
+        z_batch = z_dist.sample()
+        decoder_loss = self.reconstruction_loss(z_dist.rsample(), state_seq[0], log, metrics)
         alm_loss = 0
         log_q = log 
         for t in range(self.seq_len):
@@ -151,24 +152,25 @@ class AlmAgent(object):
                 log = False 
 
             kl_loss, z_next_prior_batch = self._kl_loss(z_batch, action_seq[t], next_state_seq[t], log, metrics)
-            if self.positive_reward or self.total_positive_reward:
-                reward_loss = torch.log(self._alm_reward_loss(z_batch, action_seq[t], log, metrics))
-            else:
-                reward_loss = self._alm_reward_loss(z_batch, action_seq[t], log, metrics)
+            # if self.positive_reward or self.total_positive_reward:
+            #     reward_loss = torch.log(self._alm_reward_loss(z_batch, action_seq[t], log, metrics))
+            # else:
+            #     reward_loss = self._alm_reward_loss(z_batch, action_seq[t], log, metrics)
+            reward_loss = 0
             alm_loss += (kl_loss - reward_loss)
 
             z_batch = z_next_prior_batch
-        if self.positive_reward or self.total_positive_reward:
-            Q = torch.log(self._alm_value_loss(z_batch, std, log_q, metrics))
-        else:
-            Q = self._alm_value_loss(z_batch, std, log_q, metrics)
-        alm_loss += (-Q)
-        return alm_loss.mean()
+        # if self.positive_reward or self.total_positive_reward:
+        #     Q = torch.log(self._alm_value_loss(z_batch, std, log_q, metrics))
+        # else:
+        #     Q = self._alm_value_loss(z_batch, std, log_q, metrics)
+        # alm_loss += (-Q)
+        return alm_loss.mean() + decoder_loss.mean()
 
     def _kl_loss(self, z_batch, action_batch, next_state_batch, log, metrics):
         z_next_prior_dist = self.model(z_batch, action_batch)
         with torch.no_grad():    
-            z_next_dist = self.encoder_target(next_state_batch)
+            z_next_dist = self.encoder(next_state_batch)
         kl = td.kl_divergence(z_next_prior_dist, z_next_dist).unsqueeze(-1)
 
         if log:
@@ -215,19 +217,16 @@ class AlmAgent(object):
             z_next_dist = self.encoder_target(next_state_batch)
 
         #update reward and classifier
-        reward_loss = self.update_reward(z_dist.rsample(), action_batch, reward_batch, z_next_dist.sample(), z_next_prior_dist.sample(), log, metrics)
+        reward_loss = self.update_reward(z_dist.sample(), action_batch, reward_batch, z_next_dist.sample(), z_next_prior_dist.sample(), log, metrics)
         
         #update critic
-        critic_loss = self.update_critic(z_dist.rsample(), action_batch, reward_batch, z_next_dist.sample(), discount_batch, std, log, metrics)
+        critic_loss = self.update_critic(z_dist.sample(), action_batch, reward_batch, z_next_dist.sample(), discount_batch, std, log, metrics)
         
-        self.encoder_opt.zero_grad()
         self.reward_opt.zero_grad()
         self.critic_opt.zero_grad()
         (reward_loss + critic_loss).backward()
-        model_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.world_model_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
         reward_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.reward_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
         critic_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.critic_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
-        self.encoder_opt.step()
         self.reward_opt.step()
         self.critic_opt.step()
         
@@ -238,6 +237,15 @@ class AlmAgent(object):
             metrics['seq_len'] = self.seq_len
             metrics['mse_loss'] = F.mse_loss(z_next_dist.sample(), z_next_prior_dist.sample()).item()
     
+    def reconstruction_loss(self, z_batch, state_batch, log, metrics):
+        decoder_pred = self.decoder(z_batch)    
+        decoder_loss = F.mse_loss(decoder_pred, state_batch)
+
+        if log:
+            metrics['decoder_loss'] = decoder_loss.item()
+            
+        return decoder_loss    
+
     def update_reward(self, z_batch, action_batch, reward_batch, z_next_batch, z_next_prior_batch, log, metrics):
         reward_loss = self._extrinsic_reward_loss(z_batch, action_batch, reward_batch.unsqueeze(-1), log, metrics)
         classifier_loss = self._intrinsic_reward_loss(z_batch, action_batch, z_next_batch, z_next_prior_batch, log, metrics)
@@ -407,6 +415,7 @@ class AlmAgent(object):
             utils.hard_update(self.encoder_target, self.encoder)
 
         self.model = ModelPrior(latent_dims, num_actions, model_hidden_dims).to(self.device)
+        self.decoder = Decoder(num_states, hidden_dims, latent_dims).to(self.device)
         self.reward = RewardPrior(latent_dims, hidden_dims, num_actions).to(self.device)
 
         if linear_classifier:
@@ -420,14 +429,15 @@ class AlmAgent(object):
 
         self.actor = Actor(latent_dims, hidden_dims, num_actions, self.action_low, self.action_high).to(self.device)
 
-        self.world_model_list = [self.model, self.encoder]
+        self.world_model_list = [self.model, self.encoder, self.decoder]
         self.reward_list = [self.reward, self.classifier]
         self.actor_list = [self.actor]
         self.critic_list = [self.critic]
 
     def _init_optims(self, lr):
-        self.encoder_opt = torch.optim.Adam(utils.get_parameters([self.encoder]), lr=lr['model'])
-        self.model_opt = torch.optim.Adam(utils.get_parameters([self.model]), lr=lr['model'])
+        # self.encoder_opt = torch.optim.Adam(utils.get_parameters([self.encoder]), lr=lr['model'])
+        # self.decoder_opt = torch.optim.Adam(self.decoder.parameters(), lr=lr['model'])
+        self.model_opt = torch.optim.Adam(utils.get_parameters(self.world_model_list), lr=lr['model'])
         self.reward_opt = torch.optim.Adam(utils.get_parameters(self.reward_list), lr=lr['reward'])
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr['actor'])
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr['critic'])
