@@ -129,7 +129,8 @@ class AlmAgent(object):
         reward_seq = torch.FloatTensor(reward_seq).to(self.device)
         done_seq = torch.FloatTensor(done_seq).to(self.device)  
         
-        alm_loss = self.alm_loss(state_seq, action_seq, next_state_seq, std, step, False, metrics)    
+        with utils.FreezeParameters([self.encoder]):
+            alm_loss = self.alm_loss(state_seq, action_seq, next_state_seq, std, step, False, metrics)    
             
         self.model_opt.zero_grad()
         alm_loss.backward()
@@ -219,14 +220,14 @@ class AlmAgent(object):
         #update critic
         critic_loss = self.update_critic(z_dist.rsample(), action_batch, reward_batch, z_next_dist.sample(), discount_batch, std, log, metrics)
         
-        self.model_opt.zero_grad()
+        self.encoder_opt.zero_grad()
         self.reward_opt.zero_grad()
         self.critic_opt.zero_grad()
         (reward_loss + critic_loss).backward()
         model_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.world_model_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
         reward_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.reward_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
         critic_grad_norm = torch.nn.utils.clip_grad_norm_(utils.get_parameters(self.critic_list), max_norm=self.max_grad_norm, error_if_nonfinite=True)
-        self.model_opt.step()
+        self.encoder_opt.step()
         self.reward_opt.step()
         self.critic_opt.step()
         
@@ -425,7 +426,8 @@ class AlmAgent(object):
         self.critic_list = [self.critic]
 
     def _init_optims(self, lr):
-        self.model_opt = torch.optim.Adam(utils.get_parameters(self.world_model_list), lr=lr['model'])
+        self.encoder_opt = torch.optim.Adam(utils.get_parameters([self.encoder]), lr=lr['model'])
+        self.model_opt = torch.optim.Adam(utils.get_parameters([self.model]), lr=lr['model'])
         self.reward_opt = torch.optim.Adam(utils.get_parameters(self.reward_list), lr=lr['reward'])
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr['actor'])
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr['critic'])
