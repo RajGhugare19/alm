@@ -48,4 +48,5 @@ python train.py id=Humanoid-v2 eval_bias=True
 Our codebase has been build using/on top of the following codes. We thank the respective authors for their awesome contributions.
 - [DRQ-v2](https://github.com/facebookresearch/drqv2)<br>
 - [SAC-SVG](https://github.com/facebookresearch/svg)<br>
+- [RED-Q](https://github.com/watchernyu/REDQ)
 
